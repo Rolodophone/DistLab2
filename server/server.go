@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"syscall"
 )
 
 type Message struct {
@@ -12,19 +13,18 @@ type Message struct {
 	message string
 }
 
-func handleError(err error) {
-	// TODO: all
-	// Deal with an error event.
-}
-
 func acceptConns(ln net.Listener, conns chan net.Conn) {
 	// TODO: all
 	// Continuously accept a network connection from the Listener
 	// and add it to the channel for handling connections.
 	for {
-		conn, _ := ln.Accept()
-		fmt.Println("[Server] Accepted new connection.")
-		conns <- conn
+		conn, err := ln.Accept()
+		if err == nil {
+			fmt.Println("[Server] Accepted new connection.")
+			conns <- conn
+		} else {
+			fmt.Printf("[Server] Error accepting new connection:\n%s\n", err)
+		}
 	}
 }
 
@@ -36,9 +36,13 @@ func handleClient(client net.Conn, clientid int, msgs chan Message) {
 	// recording which client it came from.
 	reader := bufio.NewReader(client)
 	for {
-		incomingMessage, _ := reader.ReadString('\n')
-		fmt.Printf("[Server] Message received from client #%d: %s", clientid, incomingMessage)
-		msgs <- Message{sender: clientid, message: incomingMessage}
+		incomingMessage, err := reader.ReadString('\n')
+		if err == nil {
+			fmt.Printf("[Server] Message received from client #%d: %s", clientid, incomingMessage)
+			msgs <- Message{sender: clientid, message: incomingMessage}
+		} else {
+			fmt.Printf("[Server] Error reading from client:\n%s\n", err)
+		}
 	}
 }
 
@@ -49,7 +53,11 @@ func main() {
 	flag.Parse()
 
 	//TODO Create a Listener for TCP connections on the port given above.
-	ln, _ := net.Listen("tcp", *portPtr)
+	ln, err := net.Listen("tcp", *portPtr)
+	if err != nil {
+		fmt.Printf("[Server] Error creating listener:\n%s\n", err)
+		syscall.Exit(1)
+	}
 
 	//Create a channel for connections
 	conns := make(chan net.Conn)
@@ -80,7 +88,10 @@ func main() {
 			// Send the message to all clients that aren't the sender
 			for i := 0; i < nextClientID; i++ {
 				if i != msg.sender {
-					fmt.Fprint(clients[i], msg.message)
+					_, err := fmt.Fprint(clients[i], msg.message)
+					if err != nil {
+						fmt.Printf("[Server] Error sending message to client #%d:\n%s\n", i, err)
+					}
 				}
 			}
 			fmt.Printf("[Server] Sent message from client #%d to all other clients.\n", msg.sender)
